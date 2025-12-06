@@ -1,9 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
-import matplotlib.pyplot as plt
-from collections import Counter
-import re
+import altair as alt
 
 # Replace with your deployed backend URL
 BACKEND_URL = "https://ai-feedback-system-47yp.onrender.com"
@@ -20,100 +18,144 @@ except:
     st.error("Unable to fetch data from backend.")
     st.stop()
 
-st.subheader("📋 All Submissions")
-st.dataframe(df, use_container_width=True)
+# Convert timestamp column
+df["timestamp"] = pd.to_datetime(df["timestamp"])
 
-# --------------------------------------------------------------------------------
-# 📊 Section: Basic Analytics
-# --------------------------------------------------------------------------------
+# ----------------------------------------------
+#  BEAUTIFUL SUMMARY CARDS
+# ----------------------------------------------
 
-try:
-    analytics = requests.get(BACKEND_URL + "/analytics").json()
-    st.subheader("📊 Basic Analytics")
+st.markdown("### 📊 Overview")
 
-    col1, col2 = st.columns(2)
-    if "total_submissions" in analytics:
-        col1.metric("Total Submissions", analytics["total_submissions"])
-        col2.metric("Average Rating", round(analytics["avg_rating"], 2))
-    else:
-        st.warning("Analytics unavailable")
+col1, col2, col3 = st.columns(3)
 
-except:
-    st.error("Error loading analytics.")
+total_submissions = len(df)
+average_rating = round(df["rating"].mean(), 2)
+latest_date = df["timestamp"].max().strftime("%d %b %Y")
 
-# --------------------------------------------------------------------------------
-# 📊 Rating Distribution
-# --------------------------------------------------------------------------------
+col1.metric("Total Submissions", total_submissions)
+col2.metric("Average Rating", average_rating)
+col3.metric("Last Submission", latest_date)
 
-st.subheader("⭐ Rating Distribution")
+st.markdown("---")
 
-fig, ax = plt.subplots()
-df["rating"].value_counts().sort_index().plot(kind="bar", ax=ax)
-ax.set_title("Distribution of User Ratings")
-ax.set_xlabel("Rating")
-ax.set_ylabel("Count")
-st.pyplot(fig)
+# ----------------------------------------------
+#  RATING DISTRIBUTION — Clean Altair Chart
+# ----------------------------------------------
 
-# --------------------------------------------------------------------------------
-# 📈 Ratings Over Time
-# --------------------------------------------------------------------------------
+st.markdown("### ⭐ Rating Distribution")
 
-if "timestamp" in df:
-    st.subheader("📈 Average Rating Over Time")
+rating_counts = (
+    df.groupby("rating").size().reset_index(name="count")
+)
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df_sorted = df.sort_values("timestamp")
+rating_chart = (
+    alt.Chart(rating_counts)
+    .mark_bar(color="#4CAF50")
+    .encode(
+        x=alt.X("rating:O", title="Rating"),
+        y=alt.Y("count:Q", title="Number of Submissions"),
+        tooltip=["rating", "count"]
+    )
+)
 
-    df_sorted["rolling_avg"] = df_sorted["rating"].rolling(window=3, min_periods=1).mean()
+st.altair_chart(rating_chart, use_container_width=True)
 
-    fig2, ax2 = plt.subplots()
-    ax2.plot(df_sorted["timestamp"], df_sorted["rolling_avg"], marker="o")
-    ax2.set_title("Rolling Average Rating (window=3)")
-    ax2.set_xlabel("Time")
-    ax2.set_ylabel("Average Rating")
-    plt.xticks(rotation=45)
-    st.pyplot(fig2)
+st.markdown("---")
 
-# --------------------------------------------------------------------------------
-# 📝 Most Common Review Keywords
-# --------------------------------------------------------------------------------
+# ----------------------------------------------
+#  AVERAGE RATING OVER TIME — Smooth Line Chart
+# ----------------------------------------------
 
-st.subheader("🔍 Most Common Keywords in Reviews")
+st.markdown("### 📈 Rating Trend Over Time")
+
+rating_over_time = (
+    df.groupby(df["timestamp"].dt.date)["rating"]
+    .mean()
+    .reset_index(name="avg_rating")
+)
+
+line_chart = (
+    alt.Chart(rating_over_time)
+    .mark_line(point=True, color="#2196F3")
+    .encode(
+        x=alt.X("timestamp:T", title="Date"),
+        y=alt.Y("avg_rating:Q", title="Average Rating"),
+        tooltip=["timestamp", "avg_rating"]
+    )
+)
+
+st.altair_chart(line_chart, use_container_width=True)
+
+st.markdown("---")
+
+# ----------------------------------------------
+#  SUBMISSIONS PER DAY — Clean Bar Chart
+# ----------------------------------------------
+
+st.markdown("### 🗓 Submissions Per Day")
+
+daily_counts = (
+    df.groupby(df["timestamp"].dt.date).size().reset_index(name="count")
+)
+
+daily_chart = (
+    alt.Chart(daily_counts)
+    .mark_area(color="#FF9800")
+    .encode(
+        x=alt.X("timestamp:T", title="Date"),
+        y=alt.Y("count:Q", title="Submissions"),
+        tooltip=["timestamp", "count"]
+    )
+)
+
+st.altair_chart(daily_chart, use_container_width=True)
+
+st.markdown("---")
+
+# ----------------------------------------------
+#  TOP REVIEW KEYWORDS — Professional Horizontal Bar Chart
+# ----------------------------------------------
+
+st.markdown("### 🔍 Top Keywords from Reviews")
+
+import re
+from collections import Counter
 
 def extract_keywords(text):
     text = text.lower()
     text = re.sub(r"[^a-z\s]", "", text)
     words = text.split()
-    stopwords = {"the", "is", "was", "and", "to", "it", "of", "in", "for", "very", "a", "an"}
-    words = [w for w in words if w not in stopwords and len(w) > 3]
-    return words
+    stopwords = {"the", "is", "was", "and", "to", "it", "of", "in", "for", "very", "a", "an", "this", "that"}
+    return [w for w in words if w not in stopwords and len(w) > 3]
 
 keywords = []
 for review in df["review"]:
     keywords.extend(extract_keywords(review))
 
 if len(keywords) > 0:
-    keyword_counts = Counter(keywords).most_common(10)
-    keyword_df = pd.DataFrame(keyword_counts, columns=["Keyword", "Frequency"])
-    st.bar_chart(keyword_df.set_index("Keyword"))
+    word_counts = Counter(keywords).most_common(8)
+    keyword_df = pd.DataFrame(word_counts, columns=["keyword", "count"])
+
+    keyword_chart = (
+        alt.Chart(keyword_df)
+        .mark_bar(color="#9C27B0")
+        .encode(
+            x=alt.X("count:Q", title="Frequency"),
+            y=alt.Y("keyword:O", sort="-x", title="Keyword"),
+            tooltip=["keyword", "count"]
+        )
+    )
+
+    st.altair_chart(keyword_chart, use_container_width=True)
 else:
-    st.info("Not enough data for keyword analysis.")
+    st.info("Not enough review data for keyword insights.")
 
-# --------------------------------------------------------------------------------
-# 📆 Submissions Over Time
-# --------------------------------------------------------------------------------
+st.markdown("---")
 
-st.subheader("📆 Number of Submissions Over Time")
+# ----------------------------------------------
+#  RAW TABLE (Well-Formatted)
+# ----------------------------------------------
 
-if "timestamp" in df:
-    daily_counts = df.groupby(df["timestamp"].dt.date).size()
-
-    fig3, ax3 = plt.subplots()
-    ax3.plot(daily_counts.index, daily_counts.values, marker="o")
-    ax3.set_title("Daily Submission Count")
-    ax3.set_xlabel("Date")
-    ax3.set_ylabel("Submissions")
-    plt.xticks(rotation=45)
-    st.pyplot(fig3)
-
-st.success("Analytics updated successfully!")
+st.markdown("### 📋 All Submissions (Detailed Table)")
+st.dataframe(df, use_container_width=True)
