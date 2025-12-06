@@ -1,4 +1,5 @@
 streamlit
 requests
 pandas
-watchdog    # reduces Streamlit warnings on render
+matplotlib
+watchdog   
