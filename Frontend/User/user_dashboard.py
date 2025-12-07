@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 
-# Replace with your deployed backend URL
 BACKEND_URL = "https://ai-feedback-system-47yp.onrender.com/submit"
 
 st.set_page_config(page_title="User Feedback", layout="centered")
